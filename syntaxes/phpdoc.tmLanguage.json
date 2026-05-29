@@ -1,0 +1,463 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "LSParrot PHPDoc Advanced Types",
+  "scopeName": "phpdoc.advanced.lsparrot",
+  "injectionSelector": "L:comment.block.documentation, L:comment.block.documentation.phpdoc, L:comment.block.documentation.php, L:comment.block.documentation.phpdoc.php, L:comment.block.phpdoc, L:comment.block.phpdoc.php, L:comment.block.php",
+  "patterns": [
+    {
+      "include": "#phpdoc"
+    }
+  ],
+  "repository": {
+    "phpdoc": {
+      "patterns": [
+        {
+          "include": "#type-alias"
+        },
+        {
+          "include": "#import-type"
+        },
+        {
+          "include": "#template-tag"
+        },
+        {
+          "include": "#param-like-tag"
+        },
+        {
+          "include": "#type-line-tag"
+        },
+        {
+          "include": "#method-tag"
+        },
+        {
+          "include": "#generic-tag"
+        },
+        {
+          "include": "#variable"
+        }
+      ]
+    },
+    "type-alias": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.type-alias.lsparrot",
+          "begin": "(@(?:phpstan|psalm)-type)(\\s+)([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.annotation.phpdoc.lsparrot"
+            },
+            "3": {
+              "name": "entity.name.type.alias.phpdoc.lsparrot"
+            }
+          },
+          "end": "(?=\\*/)|$",
+          "patterns": [
+            {
+              "include": "#type-expression"
+            }
+          ]
+        }
+      ]
+    },
+    "import-type": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.import-type.lsparrot",
+          "match": "(@(?:phpstan|psalm)-import-type)(\\s+)([A-Za-z_][A-Za-z0-9_]*)(\\s+)(from)(\\s+)((?:\\\\?[A-Za-z_][A-Za-z0-9_]*)(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*)(?:(\\s+)(as)(\\s+)([A-Za-z_][A-Za-z0-9_]*))?",
+          "captures": {
+            "1": {
+              "name": "storage.type.annotation.phpdoc.lsparrot"
+            },
+            "3": {
+              "name": "entity.name.type.alias.phpdoc.lsparrot"
+            },
+            "5": {
+              "name": "keyword.control.import.from.phpdoc.lsparrot"
+            },
+            "7": {
+              "name": "entity.name.type.phpdoc.lsparrot"
+            },
+            "10": {
+              "name": "keyword.control.import.as.phpdoc.lsparrot"
+            },
+            "12": {
+              "name": "entity.name.type.alias.phpdoc.lsparrot"
+            }
+          }
+        }
+      ]
+    },
+    "template-tag": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.template.lsparrot",
+          "begin": "(@(?:(?:phpstan|psalm)-)?template(?:-(?:covariant|contravariant))?)(\\s+)([A-Za-z_][A-Za-z0-9_]*)(?:(\\s+)(of|as|super)(\\s+))?",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.annotation.phpdoc.lsparrot"
+            },
+            "3": {
+              "name": "entity.name.type.template.phpdoc.lsparrot"
+            },
+            "5": {
+              "name": "keyword.operator.constraint.phpdoc.lsparrot"
+            }
+          },
+          "end": "(?=\\*/)|$",
+          "patterns": [
+            {
+              "include": "#type-expression"
+            }
+          ]
+        }
+      ]
+    },
+    "param-like-tag": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.param.lsparrot",
+          "begin": "(@(?:(?:phpstan|psalm)-)?(?:param(?:-out)?|property(?:-read|-write)?))\\b(\\s+)",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.annotation.phpdoc.lsparrot"
+            }
+          },
+          "end": "(?=\\s+(?:\\.\\.\\.)?\\$[A-Za-z_][A-Za-z0-9_]*)|(?=\\*/)|$",
+          "patterns": [
+            {
+              "include": "#type-expression"
+            }
+          ]
+        }
+      ]
+    },
+    "type-line-tag": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.type-line.lsparrot",
+          "begin": "(@(?:(?:phpstan|psalm)-)?(?:return|var|throws|extends|implements|use|mixin|assert(?:-if-(?:true|false))?|self-out|this-out))\\b(\\s*)",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.annotation.phpdoc.lsparrot"
+            }
+          },
+          "end": "(?=\\*/)|$",
+          "patterns": [
+            {
+              "include": "#type-expression"
+            },
+            {
+              "include": "#variable"
+            }
+          ]
+        }
+      ]
+    },
+    "method-tag": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.method.lsparrot",
+          "begin": "(@(?:(?:phpstan|psalm)-)?method)\\b(\\s*)",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.annotation.phpdoc.lsparrot"
+            }
+          },
+          "end": "(?=\\*/)|$",
+          "patterns": [
+            {
+              "include": "#method-modifier"
+            },
+            {
+              "include": "#method-name"
+            },
+            {
+              "include": "#type-expression"
+            },
+            {
+              "include": "#variable"
+            }
+          ]
+        }
+      ]
+    },
+    "generic-tag": {
+      "patterns": [
+        {
+          "name": "storage.type.annotation.phpdoc.lsparrot",
+          "match": "@(?:phpstan|psalm)-[A-Za-z][A-Za-z0-9-]*|@(api|deprecated|internal|readonly|pure|immutable|final|no-named-arguments|no-named-args)\\b"
+        }
+      ]
+    },
+    "type-expression": {
+      "patterns": [
+        {
+          "include": "#array-shape"
+        },
+        {
+          "include": "#callable-type"
+        },
+        {
+          "include": "#int-range"
+        },
+        {
+          "include": "#utility-generic"
+        },
+        {
+          "include": "#generic-type"
+        },
+        {
+          "include": "#class-constant"
+        },
+        {
+          "include": "#literal"
+        },
+        {
+          "include": "#utility-type"
+        },
+        {
+          "include": "#builtin-type"
+        },
+        {
+          "include": "#identifier-type"
+        },
+        {
+          "include": "#type-operator"
+        }
+      ]
+    },
+    "array-shape": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.array-shape.lsparrot",
+          "begin": "\\b(array|list|non-empty-array|non-empty-list|object)\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "support.type.phpdoc.lsparrot"
+            },
+            "2": {
+              "name": "punctuation.section.braces.begin.phpdoc.lsparrot"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.braces.end.phpdoc.lsparrot"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#shape-key"
+            },
+            {
+              "include": "#type-expression"
+            }
+          ]
+        }
+      ]
+    },
+    "shape-key": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.array-shape-key.lsparrot",
+          "match": "('(?:[^'\\\\]|\\\\.)*'|\"(?:[^\"\\\\]|\\\\.)*\"|[A-Za-z_][A-Za-z0-9_\\-]*|\\d+)(\\?)?(\\s*)(:)",
+          "captures": {
+            "1": {
+              "name": "variable.other.property.phpdoc.lsparrot"
+            },
+            "2": {
+              "name": "keyword.operator.optional.phpdoc.lsparrot"
+            },
+            "4": {
+              "name": "punctuation.separator.key-value.phpdoc.lsparrot"
+            }
+          }
+        }
+      ]
+    },
+    "callable-type": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.callable.lsparrot",
+          "begin": "\\b((?:pure-)?callable|Closure)\\s*(\\()",
+          "beginCaptures": {
+            "1": {
+              "name": "support.type.phpdoc.lsparrot"
+            },
+            "2": {
+              "name": "punctuation.section.parens.begin.phpdoc.lsparrot"
+            }
+          },
+          "end": "\\)",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.parens.end.phpdoc.lsparrot"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#type-expression"
+            },
+            {
+              "include": "#variable"
+            }
+          ]
+        }
+      ]
+    },
+    "int-range": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.int-range.lsparrot",
+          "match": "\\bint\\s*<\\s*(?:min|max|-?\\d+)\\s*,\\s*(?:min|max|-?\\d+)\\s*>"
+        }
+      ]
+    },
+    "utility-generic": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.utility-type.lsparrot",
+          "begin": "\\b(key-of|value-of|template-type|new|properties-of|public-properties-of|protected-properties-of|private-properties-of|class-string-map|int-mask-of)\\s*(<)",
+          "beginCaptures": {
+            "1": {
+              "name": "support.type.utility.phpdoc.lsparrot"
+            },
+            "2": {
+              "name": "punctuation.definition.generic.begin.phpdoc.lsparrot"
+            }
+          },
+          "end": ">",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.generic.end.phpdoc.lsparrot"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#type-expression"
+            }
+          ]
+        }
+      ]
+    },
+    "generic-type": {
+      "patterns": [
+        {
+          "name": "meta.phpdoc.generic.lsparrot",
+          "begin": "((?:\\\\?[A-Za-z_][A-Za-z0-9_]*)(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*)\\s*(<)",
+          "beginCaptures": {
+            "1": {
+              "name": "entity.name.type.phpdoc.lsparrot"
+            },
+            "2": {
+              "name": "punctuation.definition.generic.begin.phpdoc.lsparrot"
+            }
+          },
+          "end": ">",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.generic.end.phpdoc.lsparrot"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#type-expression"
+            }
+          ]
+        }
+      ]
+    },
+    "class-constant": {
+      "patterns": [
+        {
+          "name": "constant.other.class.phpdoc.lsparrot",
+          "match": "(?:\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*|self|static|parent)::[A-Za-z_][A-Za-z0-9_]*(?:\\*)?"
+        },
+        {
+          "name": "constant.language.phpdoc.lsparrot",
+          "match": "\\b[A-Z_][A-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "literal": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.phpdoc.lsparrot",
+          "match": "'(?:[^'\\\\]|\\\\.)*'"
+        },
+        {
+          "name": "string.quoted.double.phpdoc.lsparrot",
+          "match": "\"(?:[^\"\\\\]|\\\\.)*\""
+        },
+        {
+          "name": "constant.numeric.phpdoc.lsparrot",
+          "match": "(?<![A-Za-z_])[-+]?\\d+(?:\\.\\d+)?"
+        }
+      ]
+    },
+    "utility-type": {
+      "patterns": [
+        {
+          "name": "support.type.utility.phpdoc.lsparrot",
+          "match": "\\b(?:key-of|value-of|template-type|new|properties-of|public-properties-of|protected-properties-of|private-properties-of|class-string-map|int-mask|int-mask-of)\\b"
+        }
+      ]
+    },
+    "builtin-type": {
+      "patterns": [
+        {
+          "name": "support.type.phpdoc.lsparrot",
+          "match": "\\b(?:array-key|array|bool|boolean|callable|callable-string|class-string|closed-resource|double|enum-string|false|float|int|integer|interface-string|iterable|literal-string|list|lowercase-string|mixed|negative-int|never|non-decimal-int-string|non-empty-array|non-empty-list|non-empty-literal-string|non-empty-lowercase-string|non-empty-string|non-empty-uppercase-string|non-falsy-string|non-negative-int|non-positive-int|null|numeric|numeric-string|object|parent|positive-int|pure-callable|resource|scalar|self|static|string|trait-string|true|truthy-string|uppercase-string|void)\\b"
+        }
+      ]
+    },
+    "identifier-type": {
+      "patterns": [
+        {
+          "name": "entity.name.type.phpdoc.lsparrot",
+          "match": "\\\\?[A-Za-z_][A-Za-z0-9_]*(?:\\\\[A-Za-z_][A-Za-z0-9_]*)*"
+        }
+      ]
+    },
+    "type-operator": {
+      "patterns": [
+        {
+          "name": "keyword.operator.variadic.phpdoc.lsparrot",
+          "match": "\\.\\.\\."
+        },
+        {
+          "name": "punctuation.accessor.double-colon.phpdoc.lsparrot",
+          "match": "::"
+        },
+        {
+          "name": "punctuation.definition.type.phpdoc.lsparrot",
+          "match": "[<>\\[\\](),:?|&=*]"
+        }
+      ]
+    },
+    "method-modifier": {
+      "patterns": [
+        {
+          "name": "storage.modifier.phpdoc.lsparrot",
+          "match": "\\b(?:public|protected|private|static|abstract|final)\\b"
+        }
+      ]
+    },
+    "method-name": {
+      "patterns": [
+        {
+          "name": "entity.name.function.phpdoc.lsparrot",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "variable": {
+      "patterns": [
+        {
+          "name": "variable.parameter.phpdoc.lsparrot",
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    }
+  }
+}

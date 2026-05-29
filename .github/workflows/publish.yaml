@@ -1,0 +1,101 @@
+name: Publish VS Code Extension
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  Publish:
+    name: Publish to Visual Studio Marketplace
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Resolve release version
+        id: release
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "package_path=lsp-php-vscode-${VERSION}.vsix" >> "${GITHUB_OUTPUT}"
+      - name: Set package version from tag
+        run: npm version "${{ steps.release.outputs.version }}" --no-git-tag-version --allow-same-version --ignore-scripts
+      - name: Install dependencies
+        run: npm ci
+      - name: Package extension
+        run: npx vsce package --allow-missing-repository --out "${{ steps.release.outputs.package_path }}"
+      - name: Generate release notes
+        id: notes
+        run: |
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+          PREVIOUS_TAG=""
+          LAST_TAG=""
+          RELEASE_TAGS_FILE="${RUNNER_TEMP:-.}/release-tags.txt"
+
+          git tag --list "[0-9]*.[0-9]*.[0-9]*" --sort=v:refname |
+            grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' > "${RELEASE_TAGS_FILE}" || true
+
+          while IFS= read -r TAG; do
+            if test "${TAG}" = "${CURRENT_TAG}"; then
+              PREVIOUS_TAG="${LAST_TAG}"
+              break
+            fi
+            LAST_TAG="${TAG}"
+          done < "${RELEASE_TAGS_FILE}"
+
+          rm -f "${RELEASE_TAGS_FILE}"
+
+          if test -n "${PREVIOUS_TAG}"; then
+            RANGE="${PREVIOUS_TAG}..${CURRENT_TAG}"
+            CHANGES="$(git log "${RANGE}" --pretty=format:'- %s (%h)')"
+          else
+            CHANGES="$(git log "${CURRENT_TAG}" --pretty=format:'- %s (%h)')"
+          fi
+
+          {
+            echo "## Changes"
+            echo
+            if test -n "${PREVIOUS_TAG}"; then
+              echo "Changes since ${PREVIOUS_TAG}:"
+            else
+              echo "Changes included in this release:"
+            fi
+            echo
+            if test -n "${CHANGES}"; then
+              printf '%s\n' "${CHANGES}"
+            else
+              echo "- No commit changes found."
+            fi
+          } > release-notes.md
+
+          echo "previous_tag=${PREVIOUS_TAG}" >> "${GITHUB_OUTPUT}"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_PATH: ${{ steps.release.outputs.package_path }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md
+            gh release upload "${TAG}" "${PACKAGE_PATH}" --clobber
+          else
+            gh release create "${TAG}" "${PACKAGE_PATH}" --title "${TAG}" --notes-file release-notes.md --verify-tag
+          fi
+      - name: Publish extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCODE_MARKETPLACE_PAT }}
+        run: npx vsce publish --packagePath "${{ steps.release.outputs.package_path }}" --skip-duplicate

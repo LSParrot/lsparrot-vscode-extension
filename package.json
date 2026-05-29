@@ -1,0 +1,318 @@
+{
+  "name": "lsp-php-vscode",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
+  "version": "0.0.1",
+  "publisher": "LSParrot",
+  "private": true,
+  "license": "0BSD",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:php"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "lsparrot.restart",
+        "title": "%command.restart%"
+      },
+      {
+        "command": "lsparrot.toggleEnabled",
+        "title": "%command.toggleEnabled%"
+      },
+      {
+        "command": "lsparrot.selectAdditionalBackends",
+        "title": "%command.selectAnalyzer%"
+      },
+      {
+        "command": "lsparrot.searchWorkspaceSymbols",
+        "title": "%command.searchWorkspaceSymbols%"
+      },
+      {
+        "command": "lsparrot.findMethodByName",
+        "title": "%command.findMethodByName%"
+      },
+      {
+        "command": "lsparrot.revealProjectRoot",
+        "title": "%command.revealProjectRoot%"
+      },
+      {
+        "command": "lsparrot.generateConstructor",
+        "title": "%command.generateConstructor%"
+      },
+      {
+        "command": "lsparrot.generateGettersSetters",
+        "title": "%command.generateGettersSetters%"
+      },
+      {
+        "command": "lsparrot.generateMethodStub",
+        "title": "%command.generateMethodStub%"
+      },
+      {
+        "command": "lsparrot.searchFrameworkArtifacts",
+        "title": "%command.searchFrameworkArtifacts%"
+      },
+      {
+        "command": "lsparrot.debugCurrentFile",
+        "title": "%command.debugCurrentFile%"
+      },
+      {
+        "command": "lsparrot.toggleGitBlame",
+        "title": "%command.toggleGitBlame%"
+      },
+      {
+        "command": "lsparrot.showOutput",
+        "title": "%command.showOutput%"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "lsparrot.searchWorkspaceSymbols",
+        "key": "ctrl+shift+backspace",
+        "mac": "cmd+shift+backspace",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "lsparrot.searchWorkspaceSymbols",
+        "key": "ctrl+shift+delete",
+        "mac": "cmd+shift+delete",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "lsparrot.toggleGitBlame",
+          "when": "editorLangId == php",
+          "group": "navigation@11"
+        }
+      ]
+    },
+    "grammars": [
+      {
+        "scopeName": "phpdoc.advanced.lsparrot",
+        "path": "./syntaxes/phpdoc.tmLanguage.json",
+        "injectTo": [
+          "text.html.php",
+          "source.php"
+        ]
+      }
+    ],
+    "configuration": [
+      {
+        "id": "lsparrot",
+        "title": "%configuration.title%",
+        "order": 1,
+        "properties": {
+          "lsparrot.enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.enabled.description%"
+          },
+          "lsparrot.phpPath": {
+            "type": "string",
+            "default": "php",
+            "description": "%configuration.phpPath.description%"
+          },
+          "lsparrot.additionalAnalyzer": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "phpstan",
+                "psalm",
+                "psalm-ls"
+              ]
+            },
+            "default": [],
+            "uniqueItems": true,
+            "description": "%configuration.additionalAnalyzer.description%"
+          },
+          "lsparrot.phpArgs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "%configuration.phpArgs.description%"
+          },
+          "lsparrot.phpMemoryLimit": {
+            "type": "string",
+            "default": "-1",
+            "description": "%configuration.phpMemoryLimit.description%"
+          },
+          "lsparrot.enableJit": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.enableJit.description%"
+          },
+          "lsparrot.jitBufferSize": {
+            "type": "string",
+            "default": "32M",
+            "description": "%configuration.jitBufferSize.description%"
+          },
+          "lsparrot.jitMode": {
+            "type": "string",
+            "default": "tracing",
+            "description": "%configuration.jitMode.description%"
+          },
+          "lsparrot.symbolIndexSize": {
+            "type": "string",
+            "default": "64M",
+            "description": "%configuration.symbolIndexSize.description%"
+          },
+          "lsparrot.workerCount": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "description": "%configuration.workerCount.description%"
+          },
+          "lsparrot.analyzerDiagnosticsTimeout": {
+            "type": "number",
+            "default": 60,
+            "minimum": 0,
+            "description": "%configuration.analyzerDiagnosticsTimeout.description%"
+          }
+        }
+      },
+      {
+        "id": "lsparrot.phpstan",
+        "title": "%configuration.phpstan.title%",
+        "order": 2,
+        "properties": {
+          "lsparrot.phpstanLevel": {
+            "type": "number",
+            "default": 6,
+            "minimum": 0,
+            "description": "%configuration.phpstanLevel.description%"
+          }
+        }
+      },
+      {
+        "id": "lsparrot.psalm",
+        "title": "%configuration.psalm.title%",
+        "order": 3,
+        "properties": {
+          "lsparrot.psalmLevel": {
+            "type": "number",
+            "default": 6,
+            "minimum": 1,
+            "description": "%configuration.psalmLevel.description%"
+          },
+          "lsparrot.psalm.showInfo": {
+            "type": "boolean",
+            "default": false,
+            "description": "%configuration.psalm.showInfo.description%"
+          },
+          "lsparrot.psalm.liveDeadCodeDiagnostics": {
+            "type": "boolean",
+            "default": false,
+            "description": "%configuration.psalm.liveDeadCodeDiagnostics.description%"
+          }
+        }
+      },
+      {
+        "id": "lsparrot.psalmLanguageServer",
+        "title": "%configuration.psalmLanguageServer.title%",
+        "order": 4,
+        "properties": {
+          "lsparrot.psalm.transport": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "languageServer",
+              "cli"
+            ],
+            "default": "auto",
+            "description": "%configuration.psalm.transport.description%"
+          },
+          "lsparrot.psalm.onChange": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.psalm.onChange.description%"
+          },
+          "lsparrot.psalm.onChangeDebounceMs": {
+            "type": "number",
+            "default": 500,
+            "minimum": 0,
+            "description": "%configuration.psalm.onChangeDebounceMs.description%"
+          },
+          "lsparrot.psalm.maxResponseWaitMs": {
+            "type": "number",
+            "default": 200,
+            "minimum": 0,
+            "description": "%configuration.psalm.maxResponseWaitMs.description%"
+          },
+          "lsparrot.psalm.enableAutocomplete": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.psalm.enableAutocomplete.description%"
+          },
+          "lsparrot.psalm.enableDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.psalm.enableDiagnostics.description%"
+          },
+          "lsparrot.psalm.enableHover": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.psalm.enableHover.description%"
+          },
+          "lsparrot.psalm.enableDefinition": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.psalm.enableDefinition.description%"
+          },
+          "lsparrot.psalm.enableSignatureHelp": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.psalm.enableSignatureHelp.description%"
+          },
+          "lsparrot.psalm.inMemory": {
+            "type": "boolean",
+            "default": false,
+            "description": "%configuration.psalm.inMemory.description%"
+          }
+        }
+      },
+      {
+        "id": "lsparrot.debug",
+        "title": "%configuration.debug.title%",
+        "order": 5,
+        "properties": {
+          "lsparrot.extensionPath": {
+            "order": 1,
+            "type": "string",
+            "default": "",
+            "description": "%configuration.extensionPath.description%"
+          },
+          "lsparrot.autoDetectWorkspaceExtension": {
+            "order": 2,
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.autoDetectWorkspaceExtension.description%"
+          }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "package": "vsce package --allow-missing-repository",
+    "vscode:prepublish": "npm run check && npm run bundle",
+    "check": "node --check extension.js",
+    "bundle": "esbuild extension.js --bundle --minify --platform=node --format=cjs --target=node18 --external:vscode --outfile=dist/extension.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.2",
+    "esbuild": "^0.28.0"
+  }
+}
