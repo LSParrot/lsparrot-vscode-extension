@@ -2,8 +2,8 @@
   "name": "lsp-php-vscode",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.0.1",
-  "publisher": "LSParrot",
+  "version": "9.9.9",
+  "publisher": "LSParrot-PHP",
   "private": true,
   "license": "0BSD",
   "engines": {

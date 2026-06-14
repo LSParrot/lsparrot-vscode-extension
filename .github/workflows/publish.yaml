@@ -3,15 +3,17 @@ name: Publish VS Code Extension
 on:
   push:
     tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   Publish:
     name: Publish to Visual Studio Marketplace
     runs-on: ubuntu-latest
+    environment: vscode-marketplace
     defaults:
       run:
         shell: sh
@@ -30,6 +32,10 @@ jobs:
         id: release
         run: |
           VERSION="${GITHUB_REF_NAME}"
+          if ! printf '%s\n' "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Release tag must be a numeric version tag without a v prefix." >&2
+            exit 1
+          fi
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "package_path=lsp-php-vscode-${VERSION}.vsix" >> "${GITHUB_OUTPUT}"
       - name: Set package version from tag
@@ -37,7 +43,67 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Package extension
-        run: npx vsce package --allow-missing-repository --out "${{ steps.release.outputs.package_path }}"
+        run: npx @vscode/vsce package --allow-missing-repository --out "${{ steps.release.outputs.package_path }}"
+      - name: Verify VSIX version
+        env:
+          PACKAGE_PATH: ${{ steps.release.outputs.package_path }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const yauzl = require('yauzl');
+
+          function readZipEntry(zipPath, entryName) {
+            return new Promise((resolve, reject) => {
+              yauzl.open(zipPath, { lazyEntries: true }, (openError, zipfile) => {
+                if (openError) {
+                  reject(openError);
+                  return;
+                }
+
+                zipfile.readEntry();
+                zipfile.on('entry', (entry) => {
+                  if (entry.fileName !== entryName) {
+                    zipfile.readEntry();
+                    return;
+                  }
+
+                  zipfile.openReadStream(entry, (streamError, stream) => {
+                    const chunks = [];
+                    if (streamError) {
+                      reject(streamError);
+                      return;
+                    }
+
+                    stream.on('data', (chunk) => chunks.push(chunk));
+                    stream.on('error', reject);
+                    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+                  });
+                });
+                zipfile.on('end', () => reject(new Error(`${entryName} was not found in ${zipPath}.`)));
+                zipfile.on('error', reject);
+              });
+            });
+          }
+
+          (async () => {
+            const releaseVersion = process.env.RELEASE_VERSION;
+            const packagePath = process.env.PACKAGE_PATH;
+            const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const vsixPackageJson = JSON.parse(await readZipEntry(packagePath, 'extension/package.json'));
+
+            if (packageJson.version !== releaseVersion) {
+              throw new Error(`package.json version ${packageJson.version} does not match release tag ${releaseVersion}.`);
+            }
+
+            if (vsixPackageJson.version !== releaseVersion) {
+              throw new Error(`VSIX version ${vsixPackageJson.version} does not match release tag ${releaseVersion}.`);
+            }
+          })().catch((error) => {
+            console.error(error.message);
+            process.exit(1);
+          });
+          NODE
       - name: Generate release notes
         id: notes
         run: |
@@ -95,7 +161,14 @@ jobs:
           else
             gh release create "${TAG}" "${PACKAGE_PATH}" --title "${TAG}" --notes-file release-notes.md --verify-tag
           fi
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Verify Marketplace credential
+        run: npx @vscode/vsce verify-pat "$(node -p "require('./package.json').publisher")" --azure-credential
       - name: Publish extension
-        env:
-          VSCE_PAT: ${{ secrets.VSCODE_MARKETPLACE_PAT }}
-        run: npx vsce publish --packagePath "${{ steps.release.outputs.package_path }}" --skip-duplicate
+        run: |
+          npx @vscode/vsce publish --azure-credential --packagePath "${{ steps.release.outputs.package_path }}" --skip-duplicate --allow-missing-repository

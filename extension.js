@@ -232,8 +232,6 @@ let consecutiveServerStartCount = 0;
 let serverStartLimitReached = false;
 let statusPollTimer;
 let serverStartInProgress = false;
-let preloadThisMemberTimers = new Map();
-let memberCacheFileWatcher;
 let currentServerStatus = {};
 let currentProcessMetrics = { count: 0, rssBytes: 0 };
 let currentStatusState = "stopped";
@@ -336,10 +334,6 @@ function activate(context) {
       updatePhpPropertyDecorations();
     }
   }));
-  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(scheduleThisMemberPreload));
-  context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(clearThisMemberPreloadTimer));
-  ensureMemberCacheInvalidationWatcher(context);
-
   setStatus("stopped", localize(isLsparrotEnabled() ? "status.stopped" : "status.disabled", { name: EXTENSION_NAME }));
   updatePhpPropertyDecorations();
   if (isLsparrotEnabled()) {
@@ -539,6 +533,11 @@ async function start(context) {
 
   const clientOptions = {
     documentSelector: [{ scheme: "file", language: "php" }],
+    synchronize: {
+      // Standard workspace/didChangeWatchedFiles drives the server-side
+      // member-cache invalidation and incremental symbol reindexing.
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.php")
+    },
     outputChannel,
     revealOutputChannelOn: RevealOutputChannelOn.Never,
     errorHandler: {
@@ -569,9 +568,6 @@ async function start(context) {
       resetClassDescendantCache();
       scheduleServerStartStableReset(startedClient);
       startStatusPolling();
-      for (const document of vscode.workspace.textDocuments) {
-        scheduleThisMemberPreload(document);
-      }
       if (activeAnalyzerStatuses.size === 0) {
         setStatus("ready", localize("status.running", { name: EXTENSION_NAME }));
       }
@@ -647,7 +643,6 @@ async function stop() {
   resetClassDescendantCache();
   clearServerStartStableResetTimer();
   clearStatusPolling();
-  clearThisMemberPreloadTimers();
   clearActiveProjectRestartTimer();
   clearAnalyzerInstallWatchers();
   disposeClientDisposables();
@@ -1203,83 +1198,6 @@ function normalizeSemanticTokens(tokens) {
   }
 
   return normalized;
-}
-
-function scheduleThisMemberPreload(document) {
-  let timer;
-  const key = document !== undefined ? document.uri.toString() : "";
-
-  if (!isPhpFileDocument(document)) {
-    return;
-  }
-
-  timer = preloadThisMemberTimers.get(key);
-  if (timer !== undefined) {
-    clearTimeout(timer);
-  }
-
-  timer = setTimeout(() => {
-    preloadThisMemberTimers.delete(key);
-    preloadThisMemberScope(document);
-  }, 150);
-  preloadThisMemberTimers.set(key, timer);
-}
-
-function clearThisMemberPreloadTimer(document) {
-  const key = document !== undefined ? document.uri.toString() : "";
-  const timer = preloadThisMemberTimers.get(key);
-
-  if (timer === undefined) {
-    return;
-  }
-
-  clearTimeout(timer);
-  preloadThisMemberTimers.delete(key);
-}
-
-function clearThisMemberPreloadTimers() {
-  for (const timer of preloadThisMemberTimers.values()) {
-    clearTimeout(timer);
-  }
-  preloadThisMemberTimers.clear();
-}
-
-async function preloadThisMemberScope(document) {
-  if (!isPhpFileDocument(document) || client === undefined || client.state !== State.Running) {
-    return;
-  }
-
-  try {
-    await client.sendRequest("lsparrot.php/preloadThisMembers", {
-      textDocument: { uri: document.uri.toString() }
-    });
-  } catch (error) {
-    log("this-member preload failed: " + (error instanceof Error ? error.message : String(error)));
-  }
-}
-
-function ensureMemberCacheInvalidationWatcher(context) {
-  if (memberCacheFileWatcher !== undefined) {
-    return;
-  }
-
-  memberCacheFileWatcher = vscode.workspace.createFileSystemWatcher("**/*.php");
-  memberCacheFileWatcher.onDidCreate(notifyMemberCacheInvalidation, undefined, context.subscriptions);
-  memberCacheFileWatcher.onDidChange(notifyMemberCacheInvalidation, undefined, context.subscriptions);
-  memberCacheFileWatcher.onDidDelete(notifyMemberCacheInvalidation, undefined, context.subscriptions);
-  context.subscriptions.push(memberCacheFileWatcher);
-}
-
-function notifyMemberCacheInvalidation(uri) {
-  if (client === undefined || client.state !== State.Running) {
-    return;
-  }
-
-  client.sendNotification("lsparrot.php/invalidateMemberCache", {
-    uri: uri !== undefined ? uri.toString() : undefined
-  }).catch((error) => {
-    log("member cache invalidation failed: " + (error instanceof Error ? error.message : String(error)));
-  });
 }
 
 async function selectAnalyzerMode() {
