@@ -117,7 +117,10 @@
       }
     ],
     "configurationDefaults": {
-      "php.suggest.basic": false
+      "php.suggest.basic": false,
+      "[php]": {
+        "editor.inlineSuggest.enabled": false
+      }
     },
     "configuration": [
       {
