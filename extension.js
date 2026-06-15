@@ -13,6 +13,11 @@ const ENABLED_STATUS_ICON = "$(check)";
 const DISABLED_STATUS_ICON = "$(debug-stop)";
 const MAX_CONSECUTIVE_SERVER_STARTS = 5;
 const SERVER_START_STABLE_RESET_MS = 30000;
+const PHP_EXECUTABLE_NAME_PATTERN = /^php(?:[0-9]+(?:\.[0-9]+)*)?(?:\.exe)?$/iu;
+const PHP_EXTENSION_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(?:\.(?:so|dylib|dll))?$/u;
+const LSPARROT_EXTENSION_FILE_PATTERN = /^(?:php_)?lsparrot\.(?:so|dylib|dll)$/iu;
+const PHP_CODE_PATH_INI_KEYS = new Set(["auto_prepend_file", "auto_append_file", "opcache.preload"]);
+const PHP_EXTENSION_INI_KEYS = new Set(["extension", "zend_extension"]);
 const PHPDOC_SEMANTIC_TOKEN_TYPES = ["keyword", "type", "parameter", "property", "operator", "string", "number", "variable"];
 const PHPDOC_SEMANTIC_TOKEN = Object.freeze({
   keyword: 0,
@@ -47,12 +52,20 @@ const RUNTIME_MESSAGES = {
     "log.targetProject": "Current target project: {path}",
     "status.stopped": "{name} is stopped.",
     "status.disabled": "{name} is disabled.",
+    "status.untrusted": "{name} is disabled in Restricted Mode.",
     "status.starting": "Starting {name}.",
     "status.running": "{name} is running.",
     "status.startFailed": "Failed to start {name}: {message}",
     "status.startLimitReached": "{name} stopped after {count} consecutive start attempts.",
+    "workspaceTrust.required": "{name} cannot execute workspace PHP processes until this workspace is trusted.",
     "startup.phpNotFound": "PHP executable \"{phpPath}\" was not found. Configure lsparrot.phpPath to a valid PHP CLI binary.",
     "startup.phpNotExecutable": "Unable to execute PHP binary \"{phpPath}\": {message}. Configure lsparrot.phpPath to a valid PHP CLI binary.",
+    "startup.phpPathInvalid": "lsparrot.phpPath must be a PHP CLI executable name on PATH or an absolute PHP binary path.",
+    "startup.phpPathUntrusted": "Absolute PHP executable \"{phpPath}\" is outside trusted directories. Use a PHP binary on PATH or place it under a trusted system/workspace directory.",
+    "startup.extensionPathInvalid": "lsparrot.extensionPath must be an LSParrot extension name or an existing LSParrot extension binary.",
+    "startup.extensionPathUntrusted": "Extension path \"{extensionPath}\" is outside trusted directories.",
+    "startup.phpArgPathInvalid": "PHP argument \"{arg}\" references an invalid runtime path: {path}",
+    "startup.phpArgPathUntrusted": "PHP argument \"{arg}\" references a path outside trusted directories: {path}",
     "startup.extensionMissing": "The PHP binary \"{phpPath}\" does not have the lsparrot extension loaded. Build/install ext-lsparrot or set lsparrot.extensionPath to the extension binary.",
     "startup.probeFailed": "Failed to inspect PHP binary \"{phpPath}\" for lsparrot support: {message}",
     "status.analyzingProject": "Analyzing PHP project.",
@@ -125,12 +138,20 @@ const RUNTIME_MESSAGES = {
     "log.targetProject": "Current target project: {path}",
     "status.stopped": "{name} は停止しています。",
     "status.disabled": "{name} は無効です。",
+    "status.untrusted": "{name} は Restricted Mode で無効化されています。",
     "status.starting": "{name} を起動しています。",
     "status.running": "{name} は実行中です。",
     "status.startFailed": "{name} の起動に失敗しました: {message}",
     "status.startLimitReached": "{name} は連続 {count} 回の起動後に停止しました。",
+    "workspaceTrust.required": "このワークスペースを信頼するまで {name} はワークスペースの PHP プロセスを実行しません。",
     "startup.phpNotFound": "PHP 実行ファイル \"{phpPath}\" が見つかりません。lsparrot.phpPath に有効な PHP CLI バイナリを設定してください。",
     "startup.phpNotExecutable": "PHP 実行ファイル \"{phpPath}\" を実行できません: {message}。lsparrot.phpPath に有効な PHP CLI バイナリを設定してください。",
+    "startup.phpPathInvalid": "lsparrot.phpPath には PATH 上の PHP CLI 実行ファイル名、または PHP バイナリの絶対パスを指定してください。",
+    "startup.phpPathUntrusted": "PHP 実行ファイルの絶対パス \"{phpPath}\" は信頼ディレクトリ外です。PATH 上の PHP、または信頼済みのシステム/ワークスペースディレクトリ配下の PHP を指定してください。",
+    "startup.extensionPathInvalid": "lsparrot.extensionPath には LSParrot 拡張名、または存在する LSParrot 拡張バイナリを指定してください。",
+    "startup.extensionPathUntrusted": "拡張パス \"{extensionPath}\" は信頼ディレクトリ外です。",
+    "startup.phpArgPathInvalid": "PHP 引数 \"{arg}\" は無効な実行時パスを参照しています: {path}",
+    "startup.phpArgPathUntrusted": "PHP 引数 \"{arg}\" は信頼ディレクトリ外のパスを参照しています: {path}",
     "startup.extensionMissing": "PHP 実行ファイル \"{phpPath}\" で lsparrot 拡張が読み込まれていません。ext-lsparrot をビルド/インストールするか、lsparrot.extensionPath に拡張バイナリを設定してください。",
     "startup.probeFailed": "PHP 実行ファイル \"{phpPath}\" の lsparrot 対応確認に失敗しました: {message}",
     "status.analyzingProject": "PHP プロジェクトを解析しています。",
@@ -301,6 +322,15 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand("lsparrot.showOutput", () => {
     outputChannel.show(true);
   }));
+  if (typeof vscode.workspace.onDidGrantWorkspaceTrust === "function") {
+    context.subscriptions.push(vscode.workspace.onDidGrantWorkspaceTrust(() => {
+      log("Workspace trust granted; LSParrot workspace execution is available.");
+      resetConsecutiveServerStarts();
+      if (extensionContext !== undefined && isLsparrotEnabled()) {
+        start(extensionContext).catch(handleUnexpectedStartFailure);
+      }
+    }));
+  }
   context.subscriptions.push(vscode.languages.registerDefinitionProvider({ scheme: "file", language: "php" }, createFallbackMethodDefinitionProvider()));
   context.subscriptions.push(vscode.languages.registerDocumentSemanticTokensProvider({ scheme: "file", language: "php" }, createPhpDocSemanticTokensProvider(), PHPDOC_SEMANTIC_LEGEND));
   codeLensEmitter = new vscode.EventEmitter();
@@ -312,8 +342,17 @@ function activate(context) {
   context.subscriptions.push(vscode.languages.registerInlayHintsProvider({ scheme: "file", language: "php" }, createGitBlameInlayProvider()));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration(CONFIG_SECTION)) {
-      persistActiveProjectVscodeConfigFromSettings(event);
+      if (isWorkspaceTrusted()) {
+        persistActiveProjectVscodeConfigFromSettings(event);
+      }
       log(localize("log.configurationChanged"));
+      if (!isWorkspaceTrusted()) {
+        stop().catch((error) => {
+          log("failed to stop LSParrot in Restricted Mode: " + (error instanceof Error ? error.message : String(error)));
+        });
+        setUntrustedWorkspaceStatus();
+        return;
+      }
       if (event.affectsConfiguration(CONFIG_SECTION + ".enabled")) {
         applyLsparrotEnabledConfiguration();
       } else if (isLsparrotEnabled()) {
@@ -334,9 +373,9 @@ function activate(context) {
       updatePhpPropertyDecorations();
     }
   }));
-  setStatus("stopped", localize(isLsparrotEnabled() ? "status.stopped" : "status.disabled", { name: EXTENSION_NAME }));
+  setStatus("stopped", localize(isLsparrotEnabled() ? (isWorkspaceTrusted() ? "status.stopped" : "status.untrusted") : "status.disabled", { name: EXTENSION_NAME }));
   updatePhpPropertyDecorations();
-  if (isLsparrotEnabled()) {
+  if (isLsparrotEnabled() && isWorkspaceTrusted()) {
     start(context).catch(handleUnexpectedStartFailure);
   }
 }
@@ -347,6 +386,27 @@ function deactivate() {
 
 function isLsparrotEnabled() {
   return vscode.workspace.getConfiguration(CONFIG_SECTION).get("enabled", true) !== false;
+}
+
+function isWorkspaceTrusted() {
+  return vscode.workspace.isTrusted !== false;
+}
+
+function setUntrustedWorkspaceStatus() {
+  setStatus("stopped", localize("status.untrusted", { name: EXTENSION_NAME }));
+}
+
+function requireTrustedWorkspace(showMessage) {
+  if (isWorkspaceTrusted()) {
+    return true;
+  }
+
+  setUntrustedWorkspaceStatus();
+  if (showMessage) {
+    vscode.window.showWarningMessage(localize("workspaceTrust.required", { name: EXTENSION_NAME }));
+  }
+
+  return false;
 }
 
 function lsparrotEnabledConfigurationTarget() {
@@ -374,6 +434,11 @@ async function openLsparrotSettings() {
 
 async function applyLsparrotEnabledConfiguration() {
   if (isLsparrotEnabled()) {
+    if (!isWorkspaceTrusted()) {
+      await stop();
+      setUntrustedWorkspaceStatus();
+      return;
+    }
     resetConsecutiveServerStarts();
     if (extensionContext !== undefined) {
       await restart();
@@ -390,6 +455,9 @@ async function start(context) {
     setStatus("stopped", localize("status.disabled", { name: EXTENSION_NAME }));
     return;
   }
+  if (!requireTrustedWorkspace(false)) {
+    return;
+  }
   if (serverStartInProgress || client !== undefined || activeClients.size > 0) {
     log("Start requested while server is already active.");
     return;
@@ -402,17 +470,17 @@ async function start(context) {
   }
 
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const configuredPhpPath = config.get("phpPath", "php");
-  const phpPath = typeof configuredPhpPath === "string" && configuredPhpPath !== "" ? configuredPhpPath : "php";
   const cwd = resolveWorkspaceRoot(context);
+  let phpPath;
   let runtimePhpArgs;
 
   intentionalClientStop = false;
   setStatus("starting", localize("status.starting", { name: EXTENSION_NAME }));
   try {
+    phpPath = resolveConfiguredPhpPath(config, cwd);
     const extensionPath = await resolveEffectiveExtensionPath(config, phpPath, cwd);
 
-    runtimePhpArgs = buildRuntimePhpArgs(config, extensionPath);
+    runtimePhpArgs = buildRuntimePhpArgs(config, extensionPath, cwd);
     await verifyPhpRuntime(phpPath, runtimePhpArgs, cwd);
   } catch (error) {
     if (startGeneration !== serverLifecycleGeneration || intentionalClientStop) {
@@ -614,6 +682,9 @@ async function restart() {
   resetConsecutiveServerStarts();
   clearCrashRestartTimer();
   await stop();
+  if (isLsparrotEnabled() && !requireTrustedWorkspace(false)) {
+    return;
+  }
   if (extensionContext !== undefined && isLsparrotEnabled()) {
     await start(extensionContext).catch(handleUnexpectedStartFailure);
   } else if (!isLsparrotEnabled()) {
@@ -1201,6 +1272,10 @@ function normalizeSemanticTokens(tokens) {
 }
 
 async function selectAnalyzerMode() {
+  if (!requireTrustedWorkspace(true)) {
+    return;
+  }
+
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const projectRoot = resolveActiveComposerProjectRoot();
   const projectConfig = readProjectVscodeConfig(projectRoot);
@@ -2646,6 +2721,10 @@ async function searchFrameworkArtifactsCommand() {
 }
 
 async function debugCurrentFileCommand() {
+  if (!requireTrustedWorkspace(true)) {
+    return;
+  }
+
   const editor = vscode.window.activeTextEditor;
   const folder = editor ? vscode.workspace.getWorkspaceFolder(editor.document.uri) : undefined;
   const cwd = folder ? folder.uri.fsPath : currentWorkspaceRoot || process.cwd();
@@ -2822,6 +2901,12 @@ async function runPhpTestRequest(request, token, debug) {
   const items = requestedPhpTestItems(request);
 
   try {
+    if (!requireTrustedWorkspace(true)) {
+      for (const item of items) {
+        run.errored(item, new vscode.TestMessage(localize("workspaceTrust.required", { name: EXTENSION_NAME })));
+      }
+      return;
+    }
     for (const item of items) {
       if (token.isCancellationRequested) {
         run.skipped(item);
@@ -2862,8 +2947,15 @@ function collectPhpTestRunItems(item, items) {
 
 async function runPhpTestItem(item, run, token, debug) {
   const data = phpTestItemData.get(item.id);
-  const execution = data ? phpTestExecution(data, item) : undefined;
+  let execution;
   let result;
+
+  try {
+    execution = data ? phpTestExecution(data, item) : undefined;
+  } catch (error) {
+    run.errored(item, new vscode.TestMessage(error instanceof Error ? error.message : String(error)));
+    return;
+  }
 
   if (!data || !execution) {
     run.skipped(item);
@@ -2917,7 +3009,7 @@ function phpTestExecution(data, item) {
 }
 
 function resolvePhpTestRunner(root, preferred) {
-  const phpPath = vscode.workspace.getConfiguration(CONFIG_SECTION).get("phpPath", "php") || "php";
+  const phpPath = resolveConfiguredPhpPath(vscode.workspace.getConfiguration(CONFIG_SECTION), root);
   const pest = path.join(root, "vendor", "bin", process.platform === "win32" ? "pest.bat" : "pest");
   const phpunit = path.join(root, "vendor", "bin", process.platform === "win32" ? "phpunit.bat" : "phpunit");
   let runnerPath;
@@ -2933,7 +3025,7 @@ function resolvePhpTestRunner(root, preferred) {
   }
 
   return {
-    command: typeof phpPath === "string" && phpPath !== "" ? phpPath : "php",
+    command: phpPath,
     args: [runnerPath],
     runnerPath
   };
@@ -3041,6 +3133,10 @@ function createGitBlameInlayProvider() {
 }
 
 async function toggleGitBlame() {
+  if (!requireTrustedWorkspace(true)) {
+    return;
+  }
+
   gitBlameEnabled = !gitBlameEnabled;
   gitBlameCache.clear();
   if (gitBlameEmitter) {
@@ -3050,6 +3146,10 @@ async function toggleGitBlame() {
 }
 
 async function showGitBlameCommit(target) {
+  if (!requireTrustedWorkspace(true)) {
+    return;
+  }
+
   let repo = target && target.repo;
   let commit = target && target.commit;
   if (!repo || !commit) {
@@ -3263,11 +3363,11 @@ function formatAnalyzerSelectionName(value) {
   return formatAnalyzerName(value);
 }
 
-function buildRuntimePhpArgs(config, extensionPath) {
+function buildRuntimePhpArgs(config, extensionPath, cwd) {
   const args = [];
   const generated = [];
   const configuredPhpArgs = config.get("phpArgs", []);
-  const phpArgs = Array.isArray(configuredPhpArgs) ? configuredPhpArgs : [];
+  const phpArgs = validateRuntimePhpArgs(Array.isArray(configuredPhpArgs) ? configuredPhpArgs : [], cwd);
   const memoryLimit = config.get("phpMemoryLimit", "-1");
   const enableJit = config.get("enableJit", true);
   const jitBufferSize = config.get("jitBufferSize", "32M");
@@ -3299,6 +3399,89 @@ function buildRuntimePhpArgs(config, extensionPath) {
   }
 
   return args;
+}
+
+function validateRuntimePhpArgs(phpArgs, cwd) {
+  const validated = [];
+
+  for (let index = 0; index < phpArgs.length; index++) {
+    const arg = phpArgs[index];
+    const nextArg = index + 1 < phpArgs.length ? phpArgs[index + 1] : undefined;
+
+    if (typeof arg !== "string" || arg === "") {
+      continue;
+    }
+    validateRuntimePhpArg(arg, nextArg, cwd);
+    validated.push(arg);
+  }
+
+  return validated;
+}
+
+function validateRuntimePhpArg(arg, nextArg, cwd) {
+  const ini = parsePhpDefineArgument(arg, nextArg);
+
+  if (ini === undefined) {
+    return;
+  }
+  if (PHP_EXTENSION_INI_KEYS.has(ini.key)) {
+    validatePhpExtensionIniValue(ini.value, cwd, ini.raw);
+  } else if (PHP_CODE_PATH_INI_KEYS.has(ini.key)) {
+    validateTrustedRuntimeFileValue(ini.value, cwd, ini.raw);
+  }
+}
+
+function parsePhpDefineArgument(arg, nextArg) {
+  if (arg === "-d" && typeof nextArg === "string") {
+    return parsePhpIniAssignment(nextArg, nextArg);
+  }
+  if (arg.startsWith("-d") && arg.length > 2) {
+    return parsePhpIniAssignment(arg.slice(2), arg);
+  }
+
+  return undefined;
+}
+
+function parsePhpIniAssignment(value, raw) {
+  const separator = value.indexOf("=");
+  const key = (separator >= 0 ? value.slice(0, separator) : value).trim().toLowerCase();
+  const assignedValue = separator >= 0 ? value.slice(separator + 1).trim() : "";
+
+  return { key, value: assignedValue, raw };
+}
+
+function validatePhpExtensionIniValue(value, cwd, arg) {
+  if (value === "") {
+    return;
+  }
+  if (!path.isAbsolute(value) && !hasPathSeparator(value)) {
+    if (!PHP_EXTENSION_NAME_PATTERN.test(value)) {
+      throw new Error(localize("startup.phpArgPathInvalid", { arg, path: value }));
+    }
+    return;
+  }
+
+  validateTrustedRuntimePath(value, cwd, arg);
+}
+
+function validateTrustedRuntimeFileValue(value, cwd, arg) {
+  if (value === "" || value.toLowerCase() === "none") {
+    return;
+  }
+
+  validateTrustedRuntimePath(value, cwd, arg);
+}
+
+function validateTrustedRuntimePath(value, cwd, arg) {
+  const absolutePath = path.isAbsolute(value) ? value : path.resolve(cwd, value);
+  const resolved = realPathOrEmpty(absolutePath);
+
+  if (resolved === "" || !fileExists(resolved)) {
+    throw new Error(localize("startup.phpArgPathInvalid", { arg, path: value }));
+  }
+  if (!isTrustedAbsolutePath(absolutePath, cwd, true)) {
+    throw new Error(localize("startup.phpArgPathUntrusted", { arg, path: value }));
+  }
 }
 
 async function verifyPhpRuntime(phpPath, runtimePhpArgs, cwd) {
@@ -3442,6 +3625,206 @@ function optionalPositiveIntegerConfig(config, key) {
   return value;
 }
 
+function resolveConfiguredPhpPath(config, cwd) {
+  const configured = config.get("phpPath", "php");
+  const phpPath = typeof configured === "string" && configured.trim() !== "" ? configured.trim() : "php";
+
+  return validatePhpExecutablePath(phpPath, cwd);
+}
+
+function validatePhpExecutablePath(phpPath, cwd) {
+  if (path.isAbsolute(phpPath)) {
+    return validateAbsolutePhpExecutablePath(phpPath, cwd);
+  }
+  if (hasPathSeparator(phpPath)) {
+    throw new Error(localize("startup.phpPathInvalid"));
+  }
+  if (!PHP_EXECUTABLE_NAME_PATTERN.test(phpPath)) {
+    throw new Error(localize("startup.phpPathInvalid"));
+  }
+
+  const resolved = resolveExecutableFromPath(phpPath);
+  if (resolved === "") {
+    throw new Error(localize("startup.phpNotFound", { phpPath }));
+  }
+
+  return resolved;
+}
+
+function validateAbsolutePhpExecutablePath(phpPath, cwd) {
+  const resolved = realPathOrEmpty(phpPath);
+
+  if (resolved === "" || !fileExists(resolved)) {
+    throw new Error(localize("startup.phpNotFound", { phpPath }));
+  }
+  if (!PHP_EXECUTABLE_NAME_PATTERN.test(path.basename(resolved))) {
+    throw new Error(localize("startup.phpPathInvalid"));
+  }
+  if (!isTrustedAbsolutePath(phpPath, cwd, true)) {
+    throw new Error(localize("startup.phpPathUntrusted", { phpPath }));
+  }
+  if (!isExecutableFile(resolved)) {
+    throw new Error(localize("startup.phpNotExecutable", { phpPath, message: "permission denied" }));
+  }
+
+  return resolved;
+}
+
+function resolveExecutableFromPath(command) {
+  const pathValue = typeof process.env.PATH === "string" ? process.env.PATH : "";
+  const directories = pathValue.split(path.delimiter).filter((entry) => entry !== "" && path.isAbsolute(entry));
+  const extensions = executablePathExtensions(command);
+
+  for (const directory of directories) {
+    for (const extension of extensions) {
+      const candidate = path.join(directory, command + extension);
+      const resolved = realPathOrEmpty(candidate);
+
+      if (resolved !== "" && fileExists(resolved) && isExecutableFile(resolved)) {
+        return resolved;
+      }
+    }
+  }
+
+  return "";
+}
+
+function executablePathExtensions(command) {
+  if (process.platform !== "win32" || path.extname(command) !== "") {
+    return [""];
+  }
+
+  const pathExt = typeof process.env.PATHEXT === "string" && process.env.PATHEXT !== ""
+    ? process.env.PATHEXT
+    : ".COM;.EXE;.BAT;.CMD";
+
+  return pathExt.split(";").filter((entry) => entry !== "").map((entry) => entry.toLowerCase());
+}
+
+function isExecutableFile(filePath) {
+  if (!fileExists(filePath)) {
+    return false;
+  }
+  if (process.platform === "win32") {
+    return true;
+  }
+
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function hasPathSeparator(value) {
+  return value.includes("/") || value.includes("\\");
+}
+
+function realPathOrEmpty(filePath) {
+  try {
+    return fs.realpathSync(filePath);
+  } catch (_error) {
+    return "";
+  }
+}
+
+function isTrustedAbsolutePath(filePath, cwd, includeWorkspace) {
+  const resolved = realPathOrEmpty(filePath);
+  const candidates = resolved !== "" && resolved !== filePath ? [filePath, resolved] : [filePath];
+  const roots = trustedDirectoryRoots(cwd, includeWorkspace);
+
+  for (const candidate of candidates) {
+    for (const root of roots) {
+      if (pathIsInsideDirectory(candidate, root)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function trustedDirectoryRoots(cwd, includeWorkspace) {
+  const roots = new Set();
+  const pathValue = typeof process.env.PATH === "string" ? process.env.PATH : "";
+
+  for (const directory of pathValue.split(path.delimiter)) {
+    addTrustedDirectoryRoot(roots, directory);
+  }
+  for (const directory of defaultTrustedSystemDirectories()) {
+    addTrustedDirectoryRoot(roots, directory);
+  }
+  if (includeWorkspace && isWorkspaceTrusted()) {
+    if (cwd !== "") {
+      addTrustedDirectoryRoot(roots, cwd);
+    }
+    for (const folder of vscode.workspace.workspaceFolders || []) {
+      addTrustedDirectoryRoot(roots, folder.uri.fsPath);
+    }
+  }
+
+  return [...roots];
+}
+
+function addTrustedDirectoryRoot(roots, directory) {
+  const resolved = typeof directory === "string" && directory !== "" ? path.resolve(directory) : "";
+  const real = resolved !== "" ? realPathOrEmpty(resolved) : "";
+
+  if (resolved !== "" && path.isAbsolute(resolved)) {
+    roots.add(normalizePathForComparison(resolved));
+  }
+  if (real !== "" && path.isAbsolute(real)) {
+    roots.add(normalizePathForComparison(real));
+  }
+}
+
+function defaultTrustedSystemDirectories() {
+  if (process.platform === "win32") {
+    const roots = [];
+    const systemRoot = process.env.SystemRoot || process.env.windir || "";
+    const programFiles = process.env.ProgramFiles || "";
+    const programFilesX86 = process.env["ProgramFiles(x86)"] || "";
+
+    if (systemRoot !== "") {
+      roots.push(path.join(systemRoot, "System32"));
+    }
+    if (programFiles !== "") {
+      roots.push(programFiles);
+    }
+    if (programFilesX86 !== "") {
+      roots.push(programFilesX86);
+    }
+
+    return roots;
+  }
+
+  return [
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/local",
+    "/opt/homebrew",
+    "/opt/local",
+    "/nix/store"
+  ];
+}
+
+function pathIsInsideDirectory(filePath, directory) {
+  const normalizedFile = normalizePathForComparison(path.resolve(filePath));
+  const normalizedDirectory = normalizePathForComparison(path.resolve(directory));
+  const directoryWithSeparator = normalizedDirectory.endsWith(path.sep) ? normalizedDirectory : normalizedDirectory + path.sep;
+
+  return normalizedFile === normalizedDirectory || normalizedFile.startsWith(directoryWithSeparator);
+}
+
+function normalizePathForComparison(filePath) {
+  const normalized = path.normalize(filePath);
+
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
 function resolveWorkspaceRoot(context) {
   const folders = vscode.workspace.workspaceFolders;
   if (folders !== undefined && folders.length > 0) {
@@ -3452,8 +3835,8 @@ function resolveWorkspaceRoot(context) {
 }
 
 async function resolveEffectiveExtensionPath(config, phpPath, cwd) {
-  const extensionPath = resolveExtensionPath(config);
-  const runtimePhpArgsWithoutExtensionPath = buildRuntimePhpArgs(config, "");
+  const extensionPath = resolveExtensionPath(config, cwd);
+  const runtimePhpArgsWithoutExtensionPath = buildRuntimePhpArgs(config, "", cwd);
 
   if (extensionPath === "") {
     return "";
@@ -3466,10 +3849,10 @@ async function resolveEffectiveExtensionPath(config, phpPath, cwd) {
   return extensionPath;
 }
 
-function resolveExtensionPath(config) {
+function resolveExtensionPath(config, cwd) {
   const configured = config.get("extensionPath", "");
-  if (typeof configured === "string" && configured !== "") {
-    return configured;
+  if (typeof configured === "string" && configured.trim() !== "") {
+    return validateLsparrotExtensionPath(configured.trim(), cwd);
   }
 
   if (!config.get("autoDetectWorkspaceExtension", true)) {
@@ -3480,11 +3863,34 @@ function resolveExtensionPath(config) {
   for (const folder of folders) {
     const detected = detectBuiltExtension(folder.uri.fsPath);
     if (detected !== "") {
-      return detected;
+      return validateLsparrotExtensionPath(detected, cwd);
     }
   }
 
   return "";
+}
+
+function validateLsparrotExtensionPath(extensionPath, cwd) {
+  if (!path.isAbsolute(extensionPath) && !hasPathSeparator(extensionPath)) {
+    if (extensionPath === "lsparrot" || extensionPath === "php_lsparrot" || LSPARROT_EXTENSION_FILE_PATTERN.test(extensionPath)) {
+      return extensionPath;
+    }
+
+    throw new Error(localize("startup.extensionPathInvalid"));
+  }
+
+  const absolutePath = path.isAbsolute(extensionPath) ? extensionPath : path.resolve(cwd, extensionPath);
+  const resolved = realPathOrEmpty(absolutePath);
+  const basename = path.basename(resolved !== "" ? resolved : absolutePath);
+
+  if (resolved === "" || !fileExists(resolved) || !LSPARROT_EXTENSION_FILE_PATTERN.test(basename)) {
+    throw new Error(localize("startup.extensionPathInvalid"));
+  }
+  if (!isTrustedAbsolutePath(absolutePath, cwd, true)) {
+    throw new Error(localize("startup.extensionPathUntrusted", { extensionPath }));
+  }
+
+  return resolved;
 }
 
 function detectBuiltExtension(root) {
@@ -4381,7 +4787,7 @@ function readProjectVscodeConfig(projectRoot) {
 function writeProjectVscodeConfig(projectRoot, value) {
   const configPath = projectVscodeConfigPath(projectRoot);
 
-  if (configPath === "") {
+  if (configPath === "" || !isWorkspaceTrusted()) {
     return;
   }
 

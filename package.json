@@ -12,6 +12,18 @@
   "categories": [
     "Programming Languages"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%workspaceTrust.description%",
+      "restrictedConfigurations": [
+        "lsparrot.phpPath",
+        "lsparrot.phpArgs",
+        "lsparrot.extensionPath",
+        "lsparrot.autoDetectWorkspaceExtension"
+      ]
+    }
+  },
   "activationEvents": [
     "onLanguage:php"
   ],
@@ -89,7 +101,7 @@
       "editor/context": [
         {
           "command": "lsparrot.toggleGitBlame",
-          "when": "editorLangId == php",
+          "when": "editorLangId == php && isWorkspaceTrusted",
           "group": "navigation@11"
         }
       ]
@@ -312,7 +324,10 @@
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.2.2",
-    "esbuild": "^0.28.0"
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1"
+  },
+  "overrides": {
+    "tmp": "0.2.7"
   }
 }
