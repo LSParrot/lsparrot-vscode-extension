@@ -6,6 +6,7 @@
   "publisher": "LSParrot-PHP",
   "private": true,
   "license": "0BSD",
+  "icon": "lsparrot.png",
   "engines": {
     "vscode": "^1.90.0"
   },
