@@ -67,6 +67,22 @@ client state transitions, and analyzer messages.
 - Optional PHPStan, Psalm, and Psalm Language Server backends can be selected
   from the LSParrot status bar item when they are available in the active
   Composer project.
+- PHPStan and Psalm CLI diagnostics run when a PHP file is opened or saved,
+  not on every keystroke, so they pair well with `files.autoSave`. Only the
+  Psalm Language Server backend analyzes unsaved changes live. When multiple
+  Composer projects are open, project-wide analysis runs in parallel per
+  project.
+- When the `auto` backend selection finds both Psalm CLI and Psalm Language
+  Server in a project, it enables only Psalm Language Server. Select both
+  explicitly in `lsparrot.additionalAnalyzer` to run them together.
+- Document formatting and range formatting normalize indentation, trailing
+  whitespace, and the final newline. The formatter intentionally does not
+  apply full PSR-12 spacing/line-break rules; keep php-cs-fixer or phpcbf as
+  the `editor.defaultFormatter` for `[php]` if you need complete style
+  enforcement.
+- Renaming or moving a PHP file in the Explorer rewrites the declared class
+  name across the project and updates the `namespace` statement based on the
+  project's PSR-4 mapping (`workspace/willRenameFiles`).
 - `LSParrot: PHP FuzzyFinder` searches PHP classes, interfaces, traits, enums,
   functions, and a terminal shortcut. Default shortcuts:
   - Windows/Linux: `Ctrl+Shift+Backspace` or `Ctrl+Shift+Delete`
@@ -87,7 +103,14 @@ client state transitions, and analyzer messages.
 ## Settings
 
 Settings are grouped in VS Code under `LSParrot` with child sections for
-`PHPStan`, `Psalm`, `Psalm Language Server`, and `Debug`.
+`Formatting`, `PHPStan`, `Psalm`, `Psalm Language Server`, and `Debug`.
+
+Changes to `lsparrot.formatting.*`, `lsparrot.phpstanLevel`,
+`lsparrot.psalmLevel`, `lsparrot.phpMemoryLimit`,
+`lsparrot.analyzerDiagnosticsTimeout`, and
+`lsparrot.analyzerTypeQueryTimeout` are pushed to the running server through
+`workspace/didChangeConfiguration` without a restart. All other settings
+affect the server process structure and trigger a server restart.
 
 ### LSParrot
 
@@ -102,8 +125,24 @@ Settings are grouped in VS Code under `LSParrot` with child sections for
 | `lsparrot.jitBufferSize` | `32M` | `opcache.jit_buffer_size` used when JIT is enabled. |
 | `lsparrot.jitMode` | `tracing` | `opcache.jit` mode used when JIT is enabled. |
 | `lsparrot.symbolIndexSize` | `64M` | Memory reserved for the LSParrot project symbol index. |
-| `lsparrot.workerCount` | `0` | PHPStan/Psalm worker count when supported. `0` lets LSParrot choose. |
+| `lsparrot.workerCount` | `0` | PHPStan/Psalm worker count when supported. `0` lets LSParrot choose. Also controls initial-index parallelism. |
 | `lsparrot.analyzerDiagnosticsTimeout` | `60` | Seconds to wait for PHPStan/Psalm diagnostics before publishing LSParrot Engine diagnostics only. |
+| `lsparrot.analyzerTypeQueryTimeout` | `5` | Seconds interactive analyzer type queries (completion/hover) may block a request before LSParrot Engine results are returned instead. |
+
+### Formatting
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `lsparrot.formatting.enabled` | `true` | Enables the LSParrot document formatter. When disabled the server stops advertising `documentFormattingProvider`. |
+| `lsparrot.formatting.reindent` | `true` | Reindents lines while formatting. When disabled only whitespace trimming and the final newline are applied. |
+| `lsparrot.formatting.indentStyle` | `client` | Indentation characters: `client` follows the editor's `insertSpaces`, or force `space` / `tab`. |
+| `lsparrot.formatting.indentSize` | `0` | Indentation width. `0` follows the editor's `tabSize`; `1`-`16` forces a fixed width. |
+| `lsparrot.formatting.trimTrailingWhitespace` | `true` | Removes trailing whitespace while formatting. |
+| `lsparrot.formatting.insertFinalNewline` | `true` | Ensures a single final newline while formatting. |
+
+The formatter normalizes indentation and whitespace only; it does not apply
+full PSR-12 spacing/line-break rules. Use php-cs-fixer or phpcbf via
+`editor.defaultFormatter` when complete PSR-12 formatting is required.
 
 ### PHPStan
 
@@ -152,6 +191,11 @@ Composer project.
   when the PHP/Composer metadata fingerprint still matches.
 - `.lsparrot/phpstan/cache` and `.lsparrot/psalm/cache` store analyzer caches for
   LSParrot-managed PHPStan and Psalm runs.
+
+Add `.lsparrot/` to the project `.gitignore`; it only holds machine-local
+caches and generated configuration. The extension contributes
+`**/.lsparrot/**` defaults for `files.watcherExclude` and `search.exclude`
+so the cache directory stays out of file watching and search results.
 
 Set `LSPARROT_NO_INDEX=1` to skip loading and saving the serialized LSParrot
 symbol index.

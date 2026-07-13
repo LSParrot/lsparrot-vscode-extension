@@ -121,6 +121,12 @@
       "php.suggest.basic": false,
       "[php]": {
         "editor.inlineSuggest.enabled": false
+      },
+      "files.watcherExclude": {
+        "**/.lsparrot/**": true
+      },
+      "search.exclude": {
+        "**/.lsparrot/**": true
       }
     },
     "configuration": [
@@ -197,13 +203,63 @@
             "default": 60,
             "minimum": 0,
             "description": "%configuration.analyzerDiagnosticsTimeout.description%"
+          },
+          "lsparrot.analyzerTypeQueryTimeout": {
+            "type": "number",
+            "default": 5,
+            "minimum": 0,
+            "description": "%configuration.analyzerTypeQueryTimeout.description%"
+          }
+        }
+      },
+      {
+        "id": "lsparrot.formatting",
+        "title": "%configuration.formatting.title%",
+        "order": 2,
+        "properties": {
+          "lsparrot.formatting.enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.formatting.enabled.description%"
+          },
+          "lsparrot.formatting.reindent": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.formatting.reindent.description%"
+          },
+          "lsparrot.formatting.indentStyle": {
+            "type": "string",
+            "enum": [
+              "client",
+              "space",
+              "tab"
+            ],
+            "default": "client",
+            "description": "%configuration.formatting.indentStyle.description%"
+          },
+          "lsparrot.formatting.indentSize": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 16,
+            "description": "%configuration.formatting.indentSize.description%"
+          },
+          "lsparrot.formatting.trimTrailingWhitespace": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.formatting.trimTrailingWhitespace.description%"
+          },
+          "lsparrot.formatting.insertFinalNewline": {
+            "type": "boolean",
+            "default": true,
+            "description": "%configuration.formatting.insertFinalNewline.description%"
           }
         }
       },
       {
         "id": "lsparrot.phpstan",
         "title": "%configuration.phpstan.title%",
-        "order": 2,
+        "order": 3,
         "properties": {
           "lsparrot.phpstanLevel": {
             "type": "number",
@@ -216,7 +272,7 @@
       {
         "id": "lsparrot.psalm",
         "title": "%configuration.psalm.title%",
-        "order": 3,
+        "order": 4,
         "properties": {
           "lsparrot.psalmLevel": {
             "type": "number",
@@ -239,7 +295,7 @@
       {
         "id": "lsparrot.psalmLanguageServer",
         "title": "%configuration.psalmLanguageServer.title%",
-        "order": 4,
+        "order": 5,
         "properties": {
           "lsparrot.psalm.transport": {
             "type": "string",
@@ -303,7 +359,7 @@
       {
         "id": "lsparrot.debug",
         "title": "%configuration.debug.title%",
-        "order": 5,
+        "order": 6,
         "properties": {
           "lsparrot.extensionPath": {
             "order": 1,
