@@ -18,6 +18,46 @@ const PHP_EXTENSION_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(?:\.(?:so|dylib|dll)
 const LSPARROT_EXTENSION_FILE_PATTERN = /^(?:php_)?lsparrot\.(?:so|dylib|dll)$/iu;
 const PHP_CODE_PATH_INI_KEYS = new Set(["auto_prepend_file", "auto_append_file", "opcache.preload"]);
 const PHP_EXTENSION_INI_KEYS = new Set(["extension", "zend_extension"]);
+// Settings the server applies live through workspace/didChangeConfiguration.
+// Everything else affects the process structure and needs a restart.
+const LIVE_UPDATE_SETTINGS = [
+  "formatting.enabled",
+  "formatting.reindent",
+  "formatting.indentStyle",
+  "formatting.indentSize",
+  "formatting.trimTrailingWhitespace",
+  "formatting.insertFinalNewline",
+  "phpstanLevel",
+  "psalmLevel",
+  "phpMemoryLimit",
+  "analyzerDiagnosticsTimeout",
+  "analyzerTypeQueryTimeout"
+];
+const RESTART_SETTINGS = [
+  "enabled",
+  "phpPath",
+  "additionalAnalyzer",
+  "phpArgs",
+  "enableJit",
+  "jitBufferSize",
+  "jitMode",
+  "symbolIndexSize",
+  "workerCount",
+  "psalm.transport",
+  "psalm.onChange",
+  "psalm.onChangeDebounceMs",
+  "psalm.maxResponseWaitMs",
+  "psalm.enableAutocomplete",
+  "psalm.enableDiagnostics",
+  "psalm.enableHover",
+  "psalm.enableDefinition",
+  "psalm.enableSignatureHelp",
+  "psalm.showInfo",
+  "psalm.liveDeadCodeDiagnostics",
+  "psalm.inMemory",
+  "extensionPath",
+  "autoDetectWorkspaceExtension"
+];
 const PHPDOC_SEMANTIC_TOKEN_TYPES = ["keyword", "type", "parameter", "property", "operator", "string", "number", "variable"];
 const PHPDOC_SEMANTIC_TOKEN = Object.freeze({
   keyword: 0,
@@ -49,6 +89,7 @@ const PHPDOC_TYPE_KEYWORDS = new Set(["as", "of", "super", "from", "is", "not"])
 const RUNTIME_MESSAGES = {
   en: {
     "log.configurationChanged": "Configuration changed; restarting server.",
+    "log.configurationLiveUpdated": "Configuration changed; applying it live without a server restart.",
     "log.targetProject": "Current target project: {path}",
     "status.stopped": "{name} is stopped.",
     "status.disabled": "{name} is disabled.",
@@ -135,6 +176,7 @@ const RUNTIME_MESSAGES = {
   },
   ja: {
     "log.configurationChanged": "Configuration changed; restarting server.",
+    "log.configurationLiveUpdated": "Configuration changed; applying it live without a server restart.",
     "log.targetProject": "Current target project: {path}",
     "status.stopped": "{name} は停止しています。",
     "status.disabled": "{name} は無効です。",
@@ -345,8 +387,8 @@ function activate(context) {
       if (isWorkspaceTrusted()) {
         persistActiveProjectVscodeConfigFromSettings(event);
       }
-      log(localize("log.configurationChanged"));
       if (!isWorkspaceTrusted()) {
+        log(localize("log.configurationChanged"));
         stop().catch((error) => {
           log("failed to stop LSParrot in Restricted Mode: " + (error instanceof Error ? error.message : String(error)));
         });
@@ -354,9 +396,15 @@ function activate(context) {
         return;
       }
       if (event.affectsConfiguration(CONFIG_SECTION + ".enabled")) {
+        log(localize("log.configurationChanged"));
         applyLsparrotEnabledConfiguration();
       } else if (isLsparrotEnabled()) {
-        restart();
+        if (configurationChangeIsLiveUpdatable(event)) {
+          applyLiveServerConfiguration();
+        } else {
+          log(localize("log.configurationChanged"));
+          restart();
+        }
       } else {
         applyLsparrotEnabledConfiguration();
       }
@@ -450,6 +498,59 @@ async function applyLsparrotEnabledConfiguration() {
   setStatus("stopped", localize("status.disabled", { name: EXTENSION_NAME }));
 }
 
+function configurationChangeIsLiveUpdatable(event) {
+  if (RESTART_SETTINGS.some((key) => event.affectsConfiguration(CONFIG_SECTION + "." + key))) {
+    return false;
+  }
+
+  return LIVE_UPDATE_SETTINGS.some((key) => event.affectsConfiguration(CONFIG_SECTION + "." + key));
+}
+
+function buildFormattingOptions(config) {
+  const indentStyle = config.get("formatting.indentStyle", "client");
+  const indentSize = nonNegativeIntegerConfig(config, "formatting.indentSize", 0);
+
+  return {
+    enabled: config.get("formatting.enabled", true) === true,
+    reindent: config.get("formatting.reindent", true) === true,
+    indentStyle: indentStyle === "space" || indentStyle === "tab" ? indentStyle : "client",
+    indentSize: indentSize <= 16 ? indentSize : 0,
+    trimTrailingWhitespace: config.get("formatting.trimTrailingWhitespace", true) === true,
+    insertFinalNewline: config.get("formatting.insertFinalNewline", true) === true
+  };
+}
+
+function buildRuntimeServerSettings() {
+  const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
+  const memoryLimit = config.get("phpMemoryLimit", "-1");
+  const projectRoot = resolveActiveComposerProjectRoot();
+  const projectConfig = readProjectVscodeConfig(projectRoot);
+
+  return {
+    formatting: buildFormattingOptions(config),
+    phpstanLevel: projectConfigInteger(projectConfig, "phpstanLevel", nonNegativeIntegerConfig(config, "phpstanLevel", 6)),
+    psalmLevel: projectConfigInteger(projectConfig, "psalmLevel", nonNegativeIntegerConfig(config, "psalmLevel", 6)),
+    memoryLimit: typeof memoryLimit === "string" ? memoryLimit : "-1",
+    analyzerDiagnosticsTimeout: numericConfig(config, "analyzerDiagnosticsTimeout", 60),
+    analyzerTypeQueryTimeout: numericConfig(config, "analyzerTypeQueryTimeout", 5)
+  };
+}
+
+function applyLiveServerConfiguration() {
+  if (client === undefined || client.state !== State.Running) {
+    log(localize("log.configurationChanged"));
+    restart();
+    return;
+  }
+
+  log(localize("log.configurationLiveUpdated"));
+  Promise.resolve(client.sendNotification("workspace/didChangeConfiguration", {
+    settings: { lsparrot: buildRuntimeServerSettings() }
+  })).catch((error) => {
+    log("didChangeConfiguration failed: " + (error instanceof Error ? error.message : String(error)));
+  });
+}
+
 async function start(context) {
   if (!isLsparrotEnabled()) {
     setStatus("stopped", localize("status.disabled", { name: EXTENSION_NAME }));
@@ -504,10 +605,8 @@ async function start(context) {
   }
 
   const analyzerDiagnosticsTimeout = numericConfig(config, "analyzerDiagnosticsTimeout", 60);
+  const analyzerTypeQueryTimeout = numericConfig(config, "analyzerTypeQueryTimeout", 5);
   const memoryLimit = config.get("phpMemoryLimit", "-1");
-  const enableJit = config.get("enableJit", true);
-  const jitBufferSize = config.get("jitBufferSize", "32M");
-  const jitMode = config.get("jitMode", "tracing");
   const symbolIndexSize = config.get("symbolIndexSize", "64M");
   const workerCount = optionalPositiveIntegerConfig(config, "workerCount");
   const configuredPhpstanLevel = nonNegativeIntegerConfig(config, "phpstanLevel", 6);
@@ -543,18 +642,15 @@ async function start(context) {
   const options = {
     analyzer: analyzerOptionValue(normalizedAnalyzer),
     memoryLimit: typeof memoryLimit === "string" ? memoryLimit : "-1",
-    jit: {
-      enabled: enableJit === true,
-      bufferSize: typeof jitBufferSize === "string" ? jitBufferSize : "32M",
-      mode: typeof jitMode === "string" ? jitMode : "tracing"
-    },
     symbolIndex: {
       size: typeof symbolIndexSize === "string" ? symbolIndexSize : "64M"
     },
     workers: {
       count: workerCount,
-      analyzerDiagnosticsTimeout
+      analyzerDiagnosticsTimeout,
+      analyzerTypeQueryTimeout
     },
+    formatting: buildFormattingOptions(config),
     phpstan: {
       level: phpstanLevel
     },
@@ -599,12 +695,23 @@ async function start(context) {
     return { process: child, detached: false };
   };
 
+  // Standard workspace/didChangeWatchedFiles drives the server-side
+  // member-cache invalidation and incremental symbol reindexing. The server
+  // never registers watchers dynamically, so composer metadata and generated
+  // autoload maps (index fingerprint inputs) must be watched statically too.
+  const fileWatchers = [
+    vscode.workspace.createFileSystemWatcher("**/*.php"),
+    vscode.workspace.createFileSystemWatcher("**/composer.json"),
+    vscode.workspace.createFileSystemWatcher("**/composer.lock"),
+    vscode.workspace.createFileSystemWatcher("**/vendor/composer/autoload_*.php")
+  ];
+
+  clientDisposables.push(...fileWatchers);
+
   const clientOptions = {
     documentSelector: [{ scheme: "file", language: "php" }],
     synchronize: {
-      // Standard workspace/didChangeWatchedFiles drives the server-side
-      // member-cache invalidation and incremental symbol reindexing.
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.php")
+      fileEvents: fileWatchers
     },
     outputChannel,
     revealOutputChannelOn: RevealOutputChannelOn.Never,
